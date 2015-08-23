@@ -5,6 +5,7 @@ import socket
 import threading
 import socks
 import string
+import optparse
 import os
 
 def rand_string(length):
@@ -177,6 +178,7 @@ class Herder(IRCSkeleton):
 		self.default_channel = default_channel
 		self.nick = "Mr_Herder" #rand_string(7)
 		self.username = "Herder" #rand_string(7)
+		self.ascii_folder = "ascii"
 
 		self.loader = SlaveLoader(proxy_host, proxy_port)
 
@@ -192,8 +194,8 @@ class Herder(IRCSkeleton):
 				if self.loader.has_slaves():
 					ascii_file = args[0]
 					script_path = os.path.dirname(os.path.realpath(__file__))
-					ascii_path = os.path.normpath(os.path.realpath(script_path + "/ascii/" + args[0]))
-					ascii_file_after_normalize = ascii_path.replace(script_path, "").replace("/ascii/", "")
+					ascii_path = os.path.normpath(os.path.realpath(script_path + "/"+self.ascii_folder+"/" + args[0]))
+					ascii_file_after_normalize = ascii_path.replace(script_path, "").replace("/"+self.ascii_folder+"/", "")
 
 					# lfi defense!!
 					if ascii_file_after_normalize == ascii_file and os.path.isfile(ascii_path):
@@ -374,6 +376,73 @@ class Slave(IRCSkeleton):
 
 		self.send_message(self.default_channel, line)
 
-herder = Herder("#testing2", "localhost", 7000)
-herder.connect("irc.land", 6667)
-herder.start_listen(False)
+
+def parse_and_check_args():
+
+	parser = optparse.OptionParser()
+	parser.add_option("-p", "--proxy", dest="socks_proxy", help="SOCKS5 proxy to use", default="127.0.0.1:7000")
+	parser.add_option("-c", "--channel", dest="default_channel", help="channel to join", default="#lizardlounge")
+	parser.add_option("-s", "--server", dest="irc_server", help="irc server to join", default="irc.land:6667")
+	parser.add_option("-n", "--use-first", dest="use_first_n_bots", help="use the first n bots that join the channel", default=15)
+	parser.add_option("-i", "--id-length", dest="id_length", help="length of the identifier preceding slave msgs", default=5)
+	parser.add_option("-j", "--nick-prefix", dest="nick_prefix", help="nick prefix for the bots", default="`")
+	parser.add_option("-k", "--herder-name", dest="herder_name", help="name of the bot herder", default="Mr_Herder")
+	parser.add_option("-f", "--folder", dest="ascii_folder_name", help="name of the ascii folder", default="ascii")
+
+	(options, args) = parser.parse_args()
+
+	def try_parse_server(server):
+		return server.contains("")
+
+	if not ":" in options.irc_server:
+		options.server += ":6667"
+	elif not ":" in options.socks_proxy:
+		parser.error("socks proxy does not have port")
+	elif not os.path.exists(options.ascii_folder_name):
+		parser.error("ascii folder does not exist (" + options.ascii_folder_name + ")")
+
+	def can_parse_server(server):
+		try:
+			if not ":" in server:
+				return False
+
+			split_server = server.split(":")
+			host = socket.gethostbyname(split_server[0])
+			port = int(split_server[1])
+
+			return host, port
+		except:
+			return False
+
+	if not can_parse_server(options.irc_server):
+		parser.error("server not formatted correctly or cant resolve (example: irc.land:6667)")
+	elif not can_parse_server(options.socks_proxy):
+		parser.error("proxy server not formatted correctly or cant resolve (example: localhost:7000)")
+
+	return options
+
+def main():
+
+	global options
+
+	options = parse_and_check_args()
+
+	split_irc_server = options.irc_server.split(":")
+	split_proxy_server = options.socks_proxy.split(":")
+
+	host, port = split_irc_server[0], int(split_irc_server[1])
+	proxy_host, proxy_port = split_proxy_server[0], int(split_proxy_server[1])
+
+	herder = Herder(options.default_channel, proxy_host, proxy_port)
+
+	herder.loader.use_first_n_bots = options.use_first_n_bots
+	herder.loader.slave_nick_prefix = options.nick_prefix
+	herder.loader.id_length = options.id_length
+	herder.nick = options.herder_name
+	herder.username = options.herder_name
+
+	herder.connect(host, port)
+	herder.start_listen(False)
+
+if __name__ == '__main__':
+	main()
